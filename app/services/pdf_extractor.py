@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from io import BytesIO
 
 from pypdf import PdfReader
@@ -7,8 +8,14 @@ class PDFExtractionError(Exception):
     """Raised when text cannot be extracted from a PDF."""
 
 
-def extract_text_from_pdf(pdf_bytes: bytes) -> tuple[str, int]:
-    """Extract text and page count from PDF bytes."""
+@dataclass(frozen=True)
+class ExtractedPage:
+    page_number: int
+    text: str
+
+
+def extract_pages_from_pdf(pdf_bytes: bytes) -> list[ExtractedPage]:
+    """Extract text from a PDF while preserving page numbers."""
 
     if not pdf_bytes:
         raise PDFExtractionError("The uploaded PDF is empty.")
@@ -25,17 +32,33 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> tuple[str, int]:
             "Password-protected PDFs are not currently supported."
         )
 
-    page_texts: list[str] = []
+    pages: list[ExtractedPage] = []
 
-    for page in reader.pages:
-        page_text = page.extract_text() or ""
-        page_texts.append(page_text.strip())
+    for page_number, page in enumerate(reader.pages, start=1):
+        page_text = (page.extract_text() or "").strip()
 
-    full_text = "\n\n".join(text for text in page_texts if text)
+        pages.append(
+            ExtractedPage(
+                page_number=page_number,
+                text=page_text,
+            )
+        )
 
-    if not full_text.strip():
+    if not any(page.text for page in pages):
         raise PDFExtractionError(
             "No extractable text was found. The PDF may contain scanned images."
         )
 
-    return full_text, len(reader.pages)
+    return pages
+
+
+def extract_text_from_pdf(pdf_bytes: bytes) -> tuple[str, int]:
+    """Extract complete text while retaining the original interface."""
+
+    pages = extract_pages_from_pdf(pdf_bytes)
+
+    full_text = "\n\n".join(
+        page.text for page in pages if page.text
+    )
+
+    return full_text, len(pages)

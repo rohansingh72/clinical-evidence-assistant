@@ -3,22 +3,32 @@ from pydantic import BaseModel
 
 from app.services.pdf_extractor import (
     PDFExtractionError,
-    extract_text_from_pdf,
+    extract_pages_from_pdf,
 )
+from app.services.text_chunker import chunk_pages
 
 
 app = FastAPI(
     title="Clinical Evidence Assistant",
     description="A citation-grounded assistant for public clinical documents.",
-    version="0.2.0",
+    version="0.3.0",
 )
+
+
+class ChunkResponse(BaseModel):
+    chunk_id: str
+    page_number: int
+    chunk_index: int
+    text: str
 
 
 class DocumentExtractionResponse(BaseModel):
     filename: str
     page_count: int
     character_count: int
+    chunk_count: int
     text_preview: str
+    chunks: list[ChunkResponse]
 
 
 @app.get("/")
@@ -52,16 +62,32 @@ async def extract_document(
     pdf_bytes = await file.read()
 
     try:
-        text, page_count = extract_text_from_pdf(pdf_bytes)
+        pages = extract_pages_from_pdf(pdf_bytes)
     except PDFExtractionError as exc:
         raise HTTPException(
             status_code=422,
             detail=str(exc),
         ) from exc
 
+    chunks = chunk_pages(pages)
+
+    full_text = "\n\n".join(
+        page.text for page in pages if page.text
+    )
+
     return DocumentExtractionResponse(
         filename=filename,
-        page_count=page_count,
-        character_count=len(text),
-        text_preview=text[:500],
+        page_count=len(pages),
+        character_count=len(full_text),
+        chunk_count=len(chunks),
+        text_preview=full_text[:500],
+        chunks=[
+            ChunkResponse(
+                chunk_id=chunk.chunk_id,
+                page_number=chunk.page_number,
+                chunk_index=chunk.chunk_index,
+                text=chunk.text,
+            )
+            for chunk in chunks
+        ],
     )
