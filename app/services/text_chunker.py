@@ -9,18 +9,19 @@ class DocumentChunk:
     page_number: int
     chunk_index: int
     text: str
+    document_id: str = ""
+    filename: str = ""
 
 
 def chunk_pages(
     pages: list[ExtractedPage],
     max_words: int = 180,
     overlap_words: int = 30,
+    document_id: str = "",
+    filename: str = "",
 ) -> list[DocumentChunk]:
     """
-    Split extracted PDF pages into overlapping chunks.
-
-    Each chunk remains within a single page so that citations
-    can reliably reference the source page.
+    Split PDF pages into overlapping, page-aware chunks.
     """
 
     if max_words <= 0:
@@ -47,12 +48,24 @@ def chunk_pages(
             end = min(start + max_words, len(words))
             chunk_text = " ".join(words[start:end])
 
+            base_chunk_id = (
+                f"page-{page.page_number}-chunk-{chunk_index}"
+            )
+
+            chunk_id = (
+                f"{document_id}:{base_chunk_id}"
+                if document_id
+                else base_chunk_id
+            )
+
             chunks.append(
                 DocumentChunk(
-                    chunk_id=f"page-{page.page_number}-chunk-{chunk_index}",
+                    chunk_id=chunk_id,
                     page_number=page.page_number,
                     chunk_index=chunk_index,
                     text=chunk_text,
+                    document_id=document_id,
+                    filename=filename,
                 )
             )
 

@@ -1,18 +1,26 @@
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from pydantic import BaseModel
+from uuid import uuid4
 
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
+
+from app.services.embedding_service import EmbeddingService
 from app.services.pdf_extractor import (
     PDFExtractionError,
     extract_pages_from_pdf,
 )
 from app.services.text_chunker import chunk_pages
+from app.services.vector_store import InMemoryVectorStore
 
 
 app = FastAPI(
     title="Clinical Evidence Assistant",
     description="A citation-grounded assistant for public clinical documents.",
-    version="0.3.0",
+    version="0.4.0",
 )
+
+embedding_service = EmbeddingService()
+vector_store = InMemoryVectorStore()
 
 
 class ChunkResponse(BaseModel):
@@ -29,6 +37,35 @@ class DocumentExtractionResponse(BaseModel):
     chunk_count: int
     text_preview: str
     chunks: list[ChunkResponse]
+
+
+class DocumentIndexResponse(BaseModel):
+    document_id: str
+    filename: str
+    page_count: int
+    chunk_count: int
+    total_indexed_chunks: int
+
+
+class SearchRequest(BaseModel):
+    query: str = Field(min_length=2)
+    top_k: int = Field(default=3, ge=1, le=10)
+
+
+class SearchResultResponse(BaseModel):
+    chunk_id: str
+    document_id: str
+    filename: str
+    page_number: int
+    text: str
+    similarity_score: float
+    citation: str
+
+
+class SearchResponse(BaseModel):
+    query: str
+    result_count: int
+    results: list[SearchResultResponse]
 
 
 @app.get("/")
@@ -90,4 +127,104 @@ async def extract_document(
             )
             for chunk in chunks
         ],
+    )
+
+
+@app.post(
+    "/documents/index",
+    response_model=DocumentIndexResponse,
+)
+async def index_document(
+    file: UploadFile = File(...),
+) -> DocumentIndexResponse:
+    filename = file.filename or "uploaded-document.pdf"
+
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF files are supported.",
+        )
+
+    pdf_bytes = await file.read()
+    document_id = uuid4().hex
+
+    try:
+        pages = extract_pages_from_pdf(pdf_bytes)
+    except PDFExtractionError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from exc
+
+    chunks = chunk_pages(
+        pages,
+        document_id=document_id,
+        filename=filename,
+    )
+
+    if not chunks:
+        raise HTTPException(
+            status_code=422,
+            detail="The PDF did not produce any searchable text chunks.",
+        )
+
+    embeddings = await run_in_threadpool(
+        embedding_service.embed_texts,
+        [chunk.text for chunk in chunks],
+    )
+
+    vector_store.add(chunks, embeddings)
+
+    return DocumentIndexResponse(
+        document_id=document_id,
+        filename=filename,
+        page_count=len(pages),
+        chunk_count=len(chunks),
+        total_indexed_chunks=vector_store.size,
+    )
+
+
+@app.post(
+    "/search",
+    response_model=SearchResponse,
+)
+async def search_documents(
+    request: SearchRequest,
+) -> SearchResponse:
+    if vector_store.size == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="No documents have been indexed.",
+        )
+
+    query_embedding = await run_in_threadpool(
+        embedding_service.embed_query,
+        request.query,
+    )
+
+    search_results = vector_store.search(
+        query_embedding,
+        top_k=request.top_k,
+    )
+
+    results = [
+        SearchResultResponse(
+            chunk_id=result.chunk.chunk_id,
+            document_id=result.chunk.document_id,
+            filename=result.chunk.filename,
+            page_number=result.chunk.page_number,
+            text=result.chunk.text,
+            similarity_score=round(result.score, 4),
+            citation=(
+                f"{result.chunk.filename}, "
+                f"page {result.chunk.page_number}"
+            ),
+        )
+        for result in search_results
+    ]
+
+    return SearchResponse(
+        query=request.query,
+        result_count=len(results),
+        results=results,
     )

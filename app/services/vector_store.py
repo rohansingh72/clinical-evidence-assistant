@@ -73,6 +73,12 @@ class InMemoryVectorStore:
 
         self._chunks.extend(chunks)
 
+    def clear(self) -> None:
+        """Remove all indexed chunks and embeddings."""
+
+        self._chunks = []
+        self._embeddings = None
+        
     def search(
         self,
         query_embedding: np.ndarray,
