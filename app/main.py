@@ -12,6 +12,11 @@ from app.services.pdf_extractor import (
 from app.services.text_chunker import chunk_pages
 from app.services.vector_store import InMemoryVectorStore
 
+from app.services.llm_service import (
+    LLMServiceError,
+    OllamaLLMService,
+)
+
 
 app = FastAPI(
     title="Clinical Evidence Assistant",
@@ -21,6 +26,10 @@ app = FastAPI(
 
 embedding_service = EmbeddingService()
 vector_store = InMemoryVectorStore()
+
+llm_service = OllamaLLMService(
+    model="llama3.2:3b",
+)
 
 
 class ChunkResponse(BaseModel):
@@ -66,6 +75,25 @@ class SearchResponse(BaseModel):
     query: str
     result_count: int
     results: list[SearchResultResponse]
+
+class AnswerRequest(BaseModel):
+    query: str = Field(min_length=2)
+    top_k: int = Field(default=3, ge=1, le=10)
+
+
+class CitationResponse(BaseModel):
+    source_number: int
+    chunk_id: str
+    document_id: str
+    filename: str
+    page_number: int
+    similarity_score: float
+
+
+class AnswerResponse(BaseModel):
+    query: str
+    answer: str
+    citations: list[CitationResponse]
 
 
 @app.get("/")
@@ -227,4 +255,81 @@ async def search_documents(
         query=request.query,
         result_count=len(results),
         results=results,
+    )
+
+@app.post(
+    "/answer",
+    response_model=AnswerResponse,
+)
+async def answer_question(
+    request: AnswerRequest,
+) -> AnswerResponse:
+    if vector_store.size == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="No documents have been indexed.",
+        )
+
+    query_embedding = await run_in_threadpool(
+        embedding_service.embed_query,
+        request.query,
+    )
+
+    search_results = vector_store.search(
+        query_embedding,
+        top_k=request.top_k,
+    )
+
+    context_sections: list[str] = []
+
+    for source_number, result in enumerate(
+        search_results,
+        start=1,
+    ):
+        context_sections.append(
+            "\n".join(
+                [
+                    (
+                        f"[{source_number}] "
+                        f"Source: {result.chunk.filename}, "
+                        f"page {result.chunk.page_number}"
+                    ),
+                    result.chunk.text,
+                ]
+            )
+        )
+
+    context = "\n\n".join(context_sections)
+
+    try:
+        answer = await run_in_threadpool(
+            llm_service.generate_answer,
+            request.query,
+            context,
+        )
+    except LLMServiceError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+
+    citations = [
+        CitationResponse(
+            source_number=source_number,
+            chunk_id=result.chunk.chunk_id,
+            document_id=result.chunk.document_id,
+            filename=result.chunk.filename,
+            page_number=result.chunk.page_number,
+            similarity_score=round(result.score, 4),
+        )
+        for source_number, result in enumerate(
+            search_results,
+            start=1,
+        )
+    ]
+
+    return AnswerResponse(
+        query=request.query,
+        answer=answer,
+        citations=citations,
     )
