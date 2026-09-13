@@ -88,6 +88,7 @@ class CitationResponse(BaseModel):
     filename: str
     page_number: int
     similarity_score: float
+    text: str
 
 
 class AnswerResponse(BaseModel):
@@ -314,18 +315,19 @@ async def answer_question(
         ) from exc
 
     citations = [
-        CitationResponse(
-            source_number=source_number,
-            chunk_id=result.chunk.chunk_id,
-            document_id=result.chunk.document_id,
-            filename=result.chunk.filename,
-            page_number=result.chunk.page_number,
-            similarity_score=round(result.score, 4),
-        )
-        for source_number, result in enumerate(
-            search_results,
-            start=1,
-        )
+    CitationResponse(
+        source_number=source_number,
+        chunk_id=result.chunk.chunk_id,
+        document_id=result.chunk.document_id,
+        filename=result.chunk.filename,
+        page_number=result.chunk.page_number,
+        similarity_score=round(result.score, 4),
+        text=result.chunk.text,
+    )
+    for source_number, result in enumerate(
+        search_results,
+        start=1,
+    )
     ]
 
     return AnswerResponse(
