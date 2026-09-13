@@ -155,6 +155,14 @@ if st.button("Generate grounded answer"):
                     st.subheader("Answer")
                     st.markdown(answer_result["answer"])
 
+                    if answer_result["citation_validation_passed"]:
+                        st.success("Citation format validated")
+                    else:
+                        st.warning(
+                            "Citation validation warning: "
+                            + " ".join(answer_result["citation_warnings"])
+                        )
+
                     st.subheader("Supporting evidence")
 
                     for citation in answer_result["citations"]:

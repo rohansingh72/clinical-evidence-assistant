@@ -17,6 +17,10 @@ from app.services.llm_service import (
     OllamaLLMService,
 )
 
+from app.services.citation_validator import (
+    validate_answer_citations,
+)
+
 
 app = FastAPI(
     title="Clinical Evidence Assistant",
@@ -94,8 +98,9 @@ class CitationResponse(BaseModel):
 class AnswerResponse(BaseModel):
     query: str
     answer: str
+    citation_validation_passed: bool
+    citation_warnings: list[str]
     citations: list[CitationResponse]
-
 
 @app.get("/")
 def root() -> dict[str, str]:
@@ -262,6 +267,7 @@ async def search_documents(
     "/answer",
     response_model=AnswerResponse,
 )
+
 async def answer_question(
     request: AnswerRequest,
 ) -> AnswerResponse:
@@ -330,8 +336,15 @@ async def answer_question(
     )
     ]
 
+    citation_validation = validate_answer_citations(
+    answer=answer,
+    available_source_count=len(search_results),
+)
+
     return AnswerResponse(
-        query=request.query,
-        answer=answer,
-        citations=citations,
+    query=request.query,
+    answer=answer,
+    citation_validation_passed=citation_validation.is_valid,
+    citation_warnings=citation_validation.warnings,
+    citations=citations,
     )
