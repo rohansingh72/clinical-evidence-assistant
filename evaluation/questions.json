@@ -1,0 +1,32 @@
+[
+  {
+    "question": "What was the primary objective of the study?",
+    "expected_filename": "sample_clinical_study.pdf",
+    "expected_pages": [1]
+  },
+  {
+    "question": "What type of study design was used?",
+    "expected_filename": "sample_clinical_study.pdf",
+    "expected_pages": [1]
+  },
+  {
+    "question": "How many adults were enrolled?",
+    "expected_filename": "sample_clinical_study.pdf",
+    "expected_pages": [2]
+  },
+  {
+    "question": "What dose of Drug A did participants receive?",
+    "expected_filename": "sample_clinical_study.pdf",
+    "expected_pages": [2]
+  },
+  {
+    "question": "What was the primary safety endpoint?",
+    "expected_filename": "sample_clinical_study.pdf",
+    "expected_pages": [3]
+  },
+  {
+    "question": "When were adverse events assessed?",
+    "expected_filename": "sample_clinical_study.pdf",
+    "expected_pages": [3]
+  }
+]
