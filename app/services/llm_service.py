@@ -1,5 +1,10 @@
 from typing import Protocol
 
+import os
+from typing import Protocol
+
+import ollama
+
 import ollama
 
 
@@ -21,11 +26,18 @@ class OllamaLLMService:
 
     def __init__(
         self,
-        model: str = "llama3.2:3b",
-        host: str = "http://localhost:11434",
+        model: str | None = None,
+        host: str | None = None,
     ) -> None:
-        self.model = model
-        self.client = ollama.Client(host=host)
+        self.model = model or os.getenv(
+            "OLLAMA_MODEL",
+            "llama3.2:3b",
+        )
+        self.host = host or os.getenv(
+            "OLLAMA_HOST",
+            "http://localhost:11434",
+        )
+        self.client = ollama.Client(host=self.host)
 
     def generate_answer(
         self,

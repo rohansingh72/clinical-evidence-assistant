@@ -72,6 +72,44 @@ The evaluation suggested an abstention threshold of approximately `-3.5`. Questi
 
 The threshold is configurable through the `RERANKER_THRESHOLD` environment variable.
 
+## Run with Docker
+
+### Prerequisites
+
+- Docker Desktop
+- Ollama running on the host machine
+- The `llama3.2:3b` model installed locally
+
+Install the Ollama model:
+
+```bash
+ollama pull llama3.2:3b
+```
+
+Build and start the FastAPI and Streamlit containers:
+
+```bash
+docker compose up --build
+```
+
+The first startup may take several minutes while the embedding and reranking models are downloaded.
+
+Open:
+
+- Streamlit interface: http://localhost:8501
+- FastAPI health endpoint: http://localhost:8000/health
+- Interactive API documentation: http://localhost:8000/docs
+
+Ollama remains on the host machine and is accessed from the API container through `host.docker.internal`.
+
+Stop the application with:
+
+```bash
+docker compose down
+```
+
+The Hugging Face model cache is stored in a named Docker volume, so models do not need to be downloaded after every restart.
+
 ## Evaluation results
 
 Evaluation uses a synthetic clinical study document so the tests are reproducible and contain no patient information.
@@ -86,6 +124,8 @@ Evaluation uses a synthetic clinical study document so the tests are reproducibl
 | Automated tests | 15 passed |
 
 These results demonstrate the pipeline on a small synthetic dataset. They should not be interpreted as evidence of real-world clinical performance.
+
+
 
 ## Project structure
 
