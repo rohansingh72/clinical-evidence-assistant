@@ -1,4 +1,7 @@
 from uuid import uuid4
+import os
+
+from app.services.reranker_service import RerankerService
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -18,6 +21,7 @@ from app.services.llm_service import (
 )
 
 from app.services.citation_validator import (
+    ABSTENTION_MESSAGE,
     validate_answer_citations,
 )
 
@@ -33,6 +37,12 @@ vector_store = InMemoryVectorStore()
 
 llm_service = OllamaLLMService(
     model="llama3.2:3b",
+)
+
+reranker_service = RerankerService()
+
+RERANKER_THRESHOLD = float(
+    os.getenv("RERANKER_THRESHOLD", "-3.5")
 )
 
 
@@ -92,12 +102,15 @@ class CitationResponse(BaseModel):
     filename: str
     page_number: int
     similarity_score: float
+    reranker_score: float
     text: str
 
 
 class AnswerResponse(BaseModel):
     query: str
     answer: str
+    abstained: bool
+    abstention_reason: str | None
     citation_validation_passed: bool
     citation_warnings: list[str]
     citations: list[CitationResponse]
@@ -267,7 +280,6 @@ async def search_documents(
     "/answer",
     response_model=AnswerResponse,
 )
-
 async def answer_question(
     request: AnswerRequest,
 ) -> AnswerResponse:
@@ -282,15 +294,122 @@ async def answer_question(
         request.query,
     )
 
-    search_results = vector_store.search(
-        query_embedding,
-        top_k=request.top_k,
+    candidate_count = max(
+        request.top_k * 3,
+        10,
     )
+
+    candidate_results = vector_store.search(
+        query_embedding,
+        top_k=candidate_count,
+    )
+
+    reranker_scores = await run_in_threadpool(
+        reranker_service.score_passages,
+        request.query,
+        [
+            result.chunk.text
+            for result in candidate_results
+        ],
+    )
+
+    ranked_pairs = sorted(
+        zip(
+            candidate_results,
+            reranker_scores,
+            strict=True,
+        ),
+        key=lambda pair: float(pair[1]),
+        reverse=True,
+    )
+
+    selected_pairs = ranked_pairs[: request.top_k]
+
+    citations = [
+        CitationResponse(
+            source_number=source_number,
+            chunk_id=result.chunk.chunk_id,
+            document_id=result.chunk.document_id,
+            filename=result.chunk.filename,
+            page_number=result.chunk.page_number,
+            similarity_score=round(result.score, 4),
+            reranker_score=round(
+                float(reranker_score),
+                4,
+            ),
+            text=result.chunk.text,
+        )
+        for source_number, (
+            result,
+            reranker_score,
+        ) in enumerate(
+            selected_pairs,
+            start=1,
+        )
+    ]
+
+    if not selected_pairs:
+        answer = ABSTENTION_MESSAGE
+
+        citation_validation = validate_answer_citations(
+            answer=answer,
+            available_source_count=0,
+        )
+
+        return AnswerResponse(
+            query=request.query,
+            answer=answer,
+            abstained=True,
+            abstention_reason=(
+                "No candidate passages were retrieved."
+            ),
+            citation_validation_passed=(
+                citation_validation.is_valid
+            ),
+            citation_warnings=(
+                citation_validation.warnings
+            ),
+            citations=[],
+        )
+
+    top_reranker_score = float(
+        selected_pairs[0][1]
+    )
+
+    if top_reranker_score < RERANKER_THRESHOLD:
+        answer = ABSTENTION_MESSAGE
+
+        citation_validation = validate_answer_citations(
+            answer=answer,
+            available_source_count=len(citations),
+        )
+
+        return AnswerResponse(
+            query=request.query,
+            answer=answer,
+            abstained=True,
+            abstention_reason=(
+                f"Top reranker score "
+                f"{top_reranker_score:.4f} was below "
+                f"the provisional threshold "
+                f"{RERANKER_THRESHOLD:.4f}."
+            ),
+            citation_validation_passed=(
+                citation_validation.is_valid
+            ),
+            citation_warnings=(
+                citation_validation.warnings
+            ),
+            citations=citations,
+        )
 
     context_sections: list[str] = []
 
-    for source_number, result in enumerate(
-        search_results,
+    for source_number, (
+        result,
+        reranker_score,
+    ) in enumerate(
+        selected_pairs,
         start=1,
     ):
         context_sections.append(
@@ -320,31 +439,21 @@ async def answer_question(
             detail=str(exc),
         ) from exc
 
-    citations = [
-    CitationResponse(
-        source_number=source_number,
-        chunk_id=result.chunk.chunk_id,
-        document_id=result.chunk.document_id,
-        filename=result.chunk.filename,
-        page_number=result.chunk.page_number,
-        similarity_score=round(result.score, 4),
-        text=result.chunk.text,
-    )
-    for source_number, result in enumerate(
-        search_results,
-        start=1,
-    )
-    ]
-
     citation_validation = validate_answer_citations(
-    answer=answer,
-    available_source_count=len(search_results),
-)
+        answer=answer,
+        available_source_count=len(citations),
+    )
 
     return AnswerResponse(
-    query=request.query,
-    answer=answer,
-    citation_validation_passed=citation_validation.is_valid,
-    citation_warnings=citation_validation.warnings,
-    citations=citations,
+        query=request.query,
+        answer=answer,
+        abstained=False,
+        abstention_reason=None,
+        citation_validation_passed=(
+            citation_validation.is_valid
+        ),
+        citation_warnings=(
+            citation_validation.warnings
+        ),
+        citations=citations,
     )

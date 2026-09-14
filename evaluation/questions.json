@@ -1,32 +1,54 @@
 [
   {
     "question": "What was the primary objective of the study?",
+    "answerable": true,
     "expected_filename": "sample_clinical_study.pdf",
     "expected_pages": [1]
   },
   {
     "question": "What type of study design was used?",
+    "answerable": true,
     "expected_filename": "sample_clinical_study.pdf",
     "expected_pages": [1]
   },
   {
     "question": "How many adults were enrolled?",
+    "answerable": true,
     "expected_filename": "sample_clinical_study.pdf",
     "expected_pages": [2]
   },
   {
     "question": "What dose of Drug A did participants receive?",
+    "answerable": true,
     "expected_filename": "sample_clinical_study.pdf",
     "expected_pages": [2]
   },
   {
     "question": "What was the primary safety endpoint?",
+    "answerable": true,
     "expected_filename": "sample_clinical_study.pdf",
     "expected_pages": [3]
   },
   {
     "question": "When were adverse events assessed?",
+    "answerable": true,
     "expected_filename": "sample_clinical_study.pdf",
     "expected_pages": [3]
+  },
+  {
+    "question": "Which company sponsored the study?",
+    "answerable": false
+  },
+  {
+    "question": "In which countries were the study sites located?",
+    "answerable": false
+  },
+  {
+    "question": "What were the final efficacy results?",
+    "answerable": false
+  },
+  {
+    "question": "What was the weather during participant recruitment?",
+    "answerable": false
   }
 ]

@@ -155,6 +155,17 @@ if st.button("Generate grounded answer"):
                     st.subheader("Answer")
                     st.markdown(answer_result["answer"])
 
+                    if answer_result["abstained"]:
+                        st.info(
+                            "The system declined to answer because the "
+                            "retrieved evidence was insufficient."
+                        )
+
+                        if answer_result["abstention_reason"]:
+                            st.caption(
+                                answer_result["abstention_reason"]
+                            )
+
                     if answer_result["citation_validation_passed"]:
                         st.success("Citation format validated")
                     else:
@@ -170,7 +181,8 @@ if st.button("Generate grounded answer"):
                             f"[{citation['source_number']}] "
                             f"{citation['filename']} — "
                             f"page {citation['page_number']} — "
-                            f"score {citation['similarity_score']:.4f}"
+                            f"embedding {citation['similarity_score']:.4f} — "
+                            f"reranker {citation['reranker_score']:.4f}"
                         )
 
                         with st.expander(label):
